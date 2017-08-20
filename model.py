@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 import os
+import math
 
 from sklearn.utils import shuffle
 from skimage.color import rgb2gray
@@ -168,6 +169,7 @@ def apply_random_shadow_single(X):
 def generate_samples(X, y, augment=False):
     # apply random steering angle histogram equalization
     X, y = equalize_angles(X, y)
+    # select images from corresponding camera
     X, y = select_cameras(X, y, augment)
     
     n_samples = len(X)
