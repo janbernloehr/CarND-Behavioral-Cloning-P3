@@ -55,38 +55,6 @@ I started with the well-known nvidia architecture but eventually settled with a 
 
 The model consists of three 5x5 convolutional layers with valid padding, stride 1, and 2x2 max-pooling, followed by three fully connected layers. The chosen activation function is relu. Also, dropout is used on the first two fully connected layers - see the `get_model()` function for all the details.
 
-_________________________________________________________________
-Layer (type)                 Output Shape              Param #   
-=================================================================
-conv2d_1 (Conv2D)            (None, 76, 316, 32)       2432      
-_________________________________________________________________
-max_pooling2d_1 (MaxPooling2 (None, 38, 158, 32)       0         
-_________________________________________________________________
-conv2d_2 (Conv2D)            (None, 34, 154, 64)       51264     
-_________________________________________________________________
-max_pooling2d_2 (MaxPooling2 (None, 17, 77, 64)        0         
-_________________________________________________________________
-conv2d_3 (Conv2D)            (None, 13, 73, 128)       204928    
-_________________________________________________________________
-max_pooling2d_3 (MaxPooling2 (None, 6, 36, 128)        0         
-_________________________________________________________________
-flatten_1 (Flatten)          (None, 27648)             0         
-_________________________________________________________________
-dense_1 (Dense)              (None, 1000)              27649000  
-_________________________________________________________________
-dropout_1 (Dropout)          (None, 1000)              0         
-_________________________________________________________________
-dense_2 (Dense)              (None, 25)                25025     
-_________________________________________________________________
-dropout_2 (Dropout)          (None, 25)                0         
-_________________________________________________________________
-dense_3 (Dense)              (None, 1)                 26        
-=================================================================
-
-Total params: 27,932,675
-Trainable params: 27,932,675
-Non-trainable params: 0
-
 This mode has 27 million parameters whereas the nvidia model just has 1.5 million.
 
 
@@ -126,34 +94,91 @@ At the end of the process, the vehicle is able to drive autonomously around the 
 
 The final model architecture (model.py lines 18-24) consisted of a convolution neural network with the following layers and layer sizes ...
 
+Before the 320x160 images from the simulator are fed into the network, they are cropped to ???x???. Subsequently, local histogram optimization is applied to compensate dark low contrast situations which are often encountered on track 2.
+
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+conv2d_1 (Conv2D)            (None, 76, 316, 32)       2432      
+_________________________________________________________________
+max_pooling2d_1 (MaxPooling2 (None, 38, 158, 32)       0         
+_________________________________________________________________
+conv2d_2 (Conv2D)            (None, 34, 154, 64)       51264     
+_________________________________________________________________
+max_pooling2d_2 (MaxPooling2 (None, 17, 77, 64)        0         
+_________________________________________________________________
+conv2d_3 (Conv2D)            (None, 13, 73, 128)       204928    
+_________________________________________________________________
+max_pooling2d_3 (MaxPooling2 (None, 6, 36, 128)        0         
+_________________________________________________________________
+flatten_1 (Flatten)          (None, 27648)             0         
+_________________________________________________________________
+dense_1 (Dense)              (None, 1000)              27649000  
+_________________________________________________________________
+dropout_1 (Dropout)          (None, 1000)              0         
+_________________________________________________________________
+dense_2 (Dense)              (None, 25)                25025     
+_________________________________________________________________
+dropout_2 (Dropout)          (None, 25)                0         
+_________________________________________________________________
+dense_3 (Dense)              (None, 1)                 26        
+=================================================================
+
+Total params: 27,932,675
+Trainable params: 27,932,675
+Non-trainable params: 0
+
+
 Here is a visualization of the architecture (note: visualizing the architecture is optional according to the project rubric)
 
 ![alt text][image1]
 
 #### 3. Creation of the Training Set & Training Process
 
-To capture good driving behavior, I first recorded two laps on track one using center lane driving. Here is an example image of center lane driving:
+I started out with the ??? training samples provided by udacity.
 
-![alt text][image2]
+![3 examples from the udacity dataset](images/examples.PNG)
 
-I then recorded the vehicle recovering from the left side and right sides of the road back to center so that the vehicle would learn to .... These images show what a recovery looks like starting from ... :
+I couldn't manage to handle track 2 with those samples alone, thus I also recorded a few laps on the second track. 50% in default direction and 50% in the opposite direction - more on that in a minute.
 
-![alt text][image3]
-![alt text][image4]
-![alt text][image5]
+The unfiltered data set is very much biased towards steering straight.
 
-Then I repeated this process on track two in order to get more data points.
+![Histogram of unfiltered data](images/original-hist.PNG)
 
-To augment the data sat, I also flipped images and angles thinking that this would ... For example, here is an image that has then been flipped:
+To counter this, I divided the absolute steering angle interval [0,1.2] into 1200 bins and chose at random at most 50 samples for each bin -- see `equalize_angles()`. Subsequently, I added images from the left and right camera with a steering correction of +10 degree and -10 degree, respectively -- see `select_cameras`.
 
-![alt text][image6]
-![alt text][image7]
+TODO: Image of steering correction
 
-Etc ....
+Thus ending up with a distribution which is much more balanced.
 
-After the collection process, I had X number of data points. I then preprocessed this data by ...
+![Histogram of rectified data](images/rectified-hist.PNG)
 
+Most of the data on track 1 is recorded driving a left turn, thus I randomly flipped the images (together with the steering angle) to avoid overfitting -- see `apply_random_flip_single()`.
 
-I finally randomly shuffled the data set and put Y% of the data into a validation set. 
+![Random flipping](images/random-flip.PNG)
 
-I used this training data for training the model. The validation set helped determine if the model was over or under fitting. The ideal number of epochs was Z as evidenced by ... I used an adam optimizer so that manually training the learning rate wasn't necessary.
+To further counter the issue of steering angle bias and to help the model generalize, I also shifted the images from -80px to +80px where the amount was chosen from a uniform distribution, and corrected the steering angle accordingly -- see `apply_random_shifting_single()`.
+
+![Random shifting](images/random-shift.PNG)
+
+While lighting on track 1 is quite uniform, track 2 has very dark and very bright spots. Therefore, I also applied random brightness augmentation to the pictures. To make the images brighter, I used gamma correction, to make them darker, I rescaled the v component in the hsv color space.
+
+![Random brightness](images/random-brightness.PNG)
+
+On track 2 shadows are abundant and very dark at times while on track 1 there are almost no shadows. To avoid overfitting and allow the network to generalize better to shadowish situations, I painted a black polygon with random edges and random alpha onto the pictures.
+
+![Random shadow](images/random-shadow.PNG)
+
+Before training, the unfiltered dataset was split 80/20 into training and validation sets, the steering angles were histogram equalized, and the set was shuffled. Augmentations such as using left and right cameras, random flipping, random shifting, random brightness, and random shadows were only applied on the training set.
+
+| Training Set | Validation Set |
+| ------------ | -------------- |
+| X images     | Y images       |
+
+To save memory and allow parallelization a python generator is used, yielding from list of image paths and steering angles batches of (augmented) images & steering angles -- see `generate_samples()`.
+
+Every image of each of the sets is preprocessed by first selecting a horizontal slice from the image removing the car and most of the sky. Subsequently, skimage's local histogram optimization is applied to counter dark and low contrast situations. Then the image is fed into the network.  
+
+![9 images from the generator (augmentation on)](images/img_generated.PNG)
+
+The validation set helped me to determine when the model was overfitting. The ideal number of epochs was TODO 15-20 when the mse on the validation set dropped below 0.2. I used an adam optimizer so that manually training the learning rate wasn't necessary.
