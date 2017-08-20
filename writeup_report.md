@@ -147,7 +147,7 @@ The unfiltered data set is very much biased towards steering straight.
 
 To counter this, I divided the absolute steering angle interval [0,1.2] into 1200 bins and chose at random at most 50 samples for each bin -- see `equalize_angles()`. Subsequently, I added images from the left and right camera with a steering correction of +10 degree and -10 degree, respectively -- see `select_cameras`.
 
-TODO: Image of steering correction
+![Steering correction for side cams](images/sidecams-steering-correction.PNG)
 
 Thus ending up with a distribution which is much more balanced.
 
