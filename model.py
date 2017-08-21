@@ -13,8 +13,12 @@ from skimage.transform import rotate, warp, ProjectiveTransform, SimilarityTrans
 from skimage import img_as_ubyte, img_as_float
 from sklearn.model_selection import train_test_split
 
+from multiprocessing import Pool, freeze_support
+
 # The list recording directories
-data_paths = [ r"D:\recordings\data\data", r"D:\recordings\r1", r'D:\recordings\r4' ] 
+#data_paths = [ r"D:\recordings\data\data", r"D:\recordings\r1", r"D:\recordings\r2", r"D:\recordings\r3" ]
+#data_paths = [ r"D:\recordings\data\data", r"D:\recordings\r2", r"D:\recordings\r3" ]
+data_paths = [  r"D:\recordings\r2", r"D:\recordings\r3" ]
 
 # ========================================================================================================
 #                                     raw data loading section
@@ -81,20 +85,23 @@ def equalize_angles(X, y, n_bins = 1200, max_number = 50):
 # If use_side_cameras is true, then also the images from the left and right
 # camera are added to the list of returned images with a corresponding steering
 # wheel correction
-def select_cameras(X, y, use_side_cameras = False):
-    steering_angle_correction = 10. / 180. * math.pi # 10 deg
-
-    X_side = np.array(X[:, 0], copy=True)
-    if use_side_cameras:
-        X_side = np.append(X_side, X[:, 1], axis = 0)
-        X_side = np.append(X_side, X[:, 2], axis = 0)
-
-    y_side = np.array(y, copy=True)
-    if use_side_cameras:
-        y_side = np.append(y_side, y + steering_angle_correction, axis = 0)
-        y_side = np.append(y_side, y - steering_angle_correction, axis = 0)
+def random_select_cameras(X, y, use_side_cameras = False):
+    steering_angle_corrections = [0, 10. / 180. * math.pi, -10. / 180. * math.pi]
     
+    if use_side_cameras:
+        ind = np.random.randint(0, 3, len(X))
+        
+        X_side = np.array([X[i, ind[i]] for i in range(len(X))])
+        y_side = np.array([y[i] + steering_angle_corrections[ind[i]] for i in range(len(X))])
+    else:
+        X_side = np.array(X[:, 0], copy=True)
+        y_side = np.array(y, copy=True)
+        
     return X_side, y_side
+
+
+def load_single(img_path):
+    return np.array(img_as_float(cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)), dtype=np.float32)
 
 # Load all images from the given list. Expects images to be encoded as BGR. Converts to RGB float32 image 
 def load_all_imgs(img_paths):
@@ -121,9 +128,23 @@ def apply_random_flip_single(X, y):
 
 # Apply random brightness change to given image
 def apply_random_brightness_single(X):
-    gamma = np.random.uniform(0.5, 1.5)
+    coin = np.random.randint(0, 2) # either 0 or 1
     
-    return adjust_gamma(X, gamma)
+    if coin == 0:
+        # make it brither
+        gamma = np.random.uniform(0.3, 1.0)
+        
+        return adjust_gamma(X, gamma)
+    else:
+        # make it darker
+        factor = np.random.uniform(0.2, 1.0)
+        
+        hsv = cv2.cvtColor(X, cv2.COLOR_RGB2HSV)
+        h, s, v = cv2.split(hsv)
+        
+        v = factor * v
+    
+        return np.array(cv2.cvtColor(cv2.merge((h, s, v)), cv2.COLOR_HSV2RGB))
 
 # Apply random shifting to the given image and apply steering wheel correction
 # max_delta = Maximum number of pixels to shift
@@ -166,52 +187,47 @@ def apply_random_shadow_single(X):
 #                                     Training data generation
 # ========================================================================================================
 
-def generate_samples(X, y, augment=False):
-    # apply random steering angle histogram equalization
-    X, y = equalize_angles(X, y)
-    # select images from corresponding camera
-    X, y = select_cameras(X, y, augment)
+def preprocess_sample(sample):
+    X_in = sample[0]
+    y = sample[1]
+    augment = sample[2]
+
+    #print(X_in.shape)
+    X = load_single(X_in)[50:130, :, :]
     
-    n_samples = len(X)
+    if augment:
+        X = apply_random_shadow_single(X)
+        X = apply_random_brightness_single(X)
+        X, y = apply_random_flip_single(X, y)
+        X, y = apply_random_shifting_single(X, y)
+    
+    X = equalize_adapthist(X)
+    
+    return X, y
+
+def generate_samples(X_in, y_in, augment=False):
     batch_size = 128
-    ind = np.random.permutation(n_samples)
-    count = 0
+    p = Pool(7)
     
     #print('samples: ', n_samples, ' bs: ', batch_size, X.shape, y.shape)
     
     while True:
+        X, y = random_select_cameras(X_in, y_in, augment)
+        
+        n_samples = len(X)
+        ind = np.random.permutation(n_samples)
+        
         for batch in range(0, n_samples, batch_size):
             batch_ind = ind[batch:(batch+batch_size)]
-            
-            # load images from disk
-            X_b = load_all(X[batch_ind])[:, 50:130, :, :]
-            y_b = np.array(y[batch_ind], copy=True)
-            
-            if augment:
-                for i in range(len(batch_ind)):
-                    X_b[i], y_b[i] = apply_random_flip_single(X_b[i], y_b[i])
-                    X_b[i] = apply_random_brightness_single(X_b[i])
-                    X_b[i], y_b[i] = apply_random_shifting_single(X_b[i], y_b[i])
-                    X_b[i] = apply_random_shadow_single(X_b[i])
 
-            # Apply local histogram equalization to fight low contrast  
-            for i in range(len(batch_ind)):
-                X_b[i] = equalize_adapthist(X_b[i])
-                
-            count += len(batch_ind)
-                    
-            yield (X_b, y_b)
+            out = p.map(preprocess_sample, ([X[i], y[i], augment] for i in batch_ind))
+            l = list(zip(*out))
+
+            yield (np.array(l[0]), np.array(l[1]))
 
 # ========================================================================================================
 #                                     Model building
 # ========================================================================================================
-
-from keras.models import Sequential, load_model
-from keras.layers import Flatten, Dense, Conv2D, MaxPooling2D, Dropout, Activation, Lambda, Cropping2D
-from keras.optimizers import Adam
-from keras.layers import BatchNormalization,Input
-from keras import regularizers
-from keras.backend import tf as ktf
 
 def get_model():
     model = Sequential()
@@ -239,26 +255,126 @@ def get_model():
     
     return model
 
+def get_model2():
+    model = Sequential()
+    
+    reg=regularizers.l2(0.0001)
+
+    model.add(Lambda(lambda image: image[:, 2:78, 2:318, :], input_shape=(80,320,3)))
+    
+    model.add(Conv2D(16, (5,5), activation='relu', strides=(1,1)))
+    model.add(MaxPooling2D(pool_size=(2,2)))
+    model.add(Conv2D(32, (5,5), activation='relu', strides=(1,1)))
+    model.add(MaxPooling2D(pool_size=(2,2)))
+    model.add(Conv2D(64, (5,5), activation='relu', strides=(1,1)))
+    model.add(MaxPooling2D(pool_size=(2,2)))
+    model.add(Conv2D(128, (3,3), activation='relu', strides=(1,1)))
+    model.add(MaxPooling2D(pool_size=(2,2)))
+
+    model.add(Flatten())
+    
+    model.add(Dense(500, activation='relu', kernel_regularizer=reg))
+    model.add(Dropout(0.5))
+    model.add(Dense(20, activation='relu',kernel_regularizer=reg))
+    model.add(Dropout(0.25))
+    model.add(Dense(1))
+    
+    adam = Adam(lr=0.0001)
+    
+    model.compile(loss='mse', optimizer=adam, metrics=['mse','accuracy'])
+    
+    return model
+
+def get_simple_model():
+    model = Sequential()
+    
+    model.add(Lambda(lambda image: ktf.image.resize_images(image, (32, 128)), input_shape=(80,320,3)))
+    
+    model.add(Conv2D(16, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Conv2D(32, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    
+    model.add(Flatten())
+    
+    model.add(Dense(500, activation='relu'))
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(20, activation='relu'))
+    model.add(Dense(1))
+    
+    adam = Adam(lr=0.0001)
+    
+    model.compile(loss='mse', optimizer=adam, metrics=['mse','accuracy'])
+    
+    return model
+
+def get_nvidia_model():
+    model = Sequential()
+    
+    model.add(Lambda(lambda image: ktf.image.resize_images(image, (66, 200)),input_shape=(80,320,3)))
+    
+    model.add(BatchNormalization(epsilon=0.001, axis=1))
+
+    model.add(Conv2D(24,(5,5),padding='valid', activation='relu', strides=(2,2)))
+    model.add(Conv2D(36,(5,5),padding='valid', activation='relu', strides=(2,2)))
+    model.add(Conv2D(48,(5,5),padding='valid', activation='relu', strides=(2,2)))
+    model.add(Conv2D(64,(3,3),padding='valid', activation='relu', strides=(1,1)))
+    model.add(Conv2D(64,(3,3),padding='valid', activation='relu', strides=(1,1)))
+    model.add(Flatten())
+    model.add(Dense(1164, activation='relu'))
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    
+    adam = Adam(lr=0.0001)
+    
+    model.compile(loss='mse', optimizer=adam, metrics=['mse','accuracy'])
+    
+    return model
+
 # ========================================================================================================
 #                                     Run the code!
 # ========================================================================================================
 
-# Build the keras model and print a summary
-model = get_model()
-model.summary()
+if __name__ == '__main__':
+    from keras.models import Sequential, load_model
+    from keras.layers import Flatten, Dense, Conv2D, MaxPooling2D, Dropout, Activation, Lambda, Cropping2D
+    from keras.optimizers import Adam
+    from keras.layers import BatchNormalization,Input
+    from keras import regularizers
+    from keras.backend import tf as ktf
+    from keras.callbacks import ModelCheckpoint
 
-# Parse the csv files
-X_data, y_data = parse_recordings(data_paths)
+    freeze_support()
 
-# Train / Validation split
-X_train, X_val, y_train, y_val = train_test_split(X_data, y_data, test_size=.2)
+    # Build the keras model and print a summary
+    #model = get_simple_model()
+    #model = get_model()
+    #model = load_model('model-my.h5', custom_objects={"ktf": ktf})
+    #model = get_nvidia_model()
+    #model = load_model('nv-weights\model-09.h5', custom_objects={"ktf": ktf})
+    #model = load_model('model-my2.h5', custom_objects={"ktf": ktf})
+    model = get_model2()
+    model.summary()
 
-# Train the model
-model.fit_generator(generate_samples(X_train, y_train, True), 
-                    steps_per_epoch=int(len(X_train))/128,
-                    epochs=10,
+    # Parse the csv files
+    X_data, y_data = parse_recordings(data_paths)
+    X_eq, y_eq = equalize_angles(X_data, y_data)
+
+    # Train / Validation split
+    X_train, X_val, y_train, y_val = train_test_split(X_eq, y_eq, test_size=.2)
+
+    # Train the model
+
+    model.fit_generator(generate_samples(X_train, y_train, True), 
+                    steps_per_epoch=len(X_train)/128,
+                    epochs=200,
                     validation_data=generate_samples(X_val, y_val, False),
-                    validation_steps = int(len(X_val))/128)
+                    validation_steps = len(X_val)/128,
+                    callbacks=[ModelCheckpoint(r'D:\Projects\CarND-Behavioral-Cloning-P3\noob-model\modelx-{epoch:02d}.h5', monitor='val_loss', verbose=0, save_best_only=False, save_weights_only=False, mode='auto', period=1)])
 
-# Save the trained model
-model.save('model.h5')
+    # Save the trained model
+    model.save('noob-modelx.h5')
