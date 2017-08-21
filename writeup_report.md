@@ -49,91 +49,58 @@ The `model.py` file contains the code for training and saving the convolution ne
 
 ### Model Architecture and Training Strategy
 
-#### 1. An appropriate model architecture has been employed
-
-I started with the well-known nvidia architecture but eventually settled with a model which is quite similar to the one used for the traffic sign recognition (and probably has VGG as a close relative).
-
-The model consists of three 5x5 convolutional layers with valid padding, stride 1, and 2x2 max-pooling, followed by three fully connected layers. The chosen activation function is relu. Also, dropout is used on the first two fully connected layers - see the `get_model()` function for all the details.
-
-This mode has 27 million parameters whereas the nvidia model just has 1.5 million.
-
-
-#### 2. Attempts to reduce overfitting in the model
-
-The model contains two dropout layers in order to reduce overfitting. A dropout of 50% after the first fully connected layer, and a dropout of 25% after the second one.
-
-THe model was trained and validated using data generated from different test drives to ensure that the model was not overfitting. I tested the model by running it through the simulator and ensuring that the vehicle could stay on the track.
-
-#### 3. Model parameter tuning
-
-The model used an adam optimizer, so the learning rate was not tuned manually (model.py line ???).
-
-#### 4. Appropriate training data
-
-First I chose to use the training data provided by udacity making up 8'036 samples. In addition I recorded 15'000 samples on track 1. Half of it in standard direction, and half of it in opposite direction. Having data driving the track in both directions should allow the model to generalize better. Most of the images are center lane driving but I intentionally added a couple of passages where I did not steer and then recovered using a steep steering angle.
-
-### Model Architecture and Training Strategy
-
 #### 1. Solution Design Approach
 
-The overall strategy for deriving a model architecture was to ...
+The stages in which the CNN solution is built can be broken down into the usual ones: training, validation, and test -- see the diagram below. Data (camera images and steering angles) is generated using the simulator in 'training mode'. This data is preprocessed and split into training and validation sets. The training set is further augmented to counter several issues which I ran into when testing. Then the (augmented) training set is fed into the DNN for training. As a measure of progress, the DNN is tested against the validation set. When satisfied, the weights of the DNN are saved and used to run the simulator in 'autonomous mode'. There are two test tracks available where track 1 can be considered 'easier' than track 2.
 
-My first step was to use a convolution neural network model similar to the ... I thought this model might be appropriate because ...
+![Solution Design](images/SolutionSketch.png)
 
-In order to gauge how well the model was working, I split my image and steering angle data into a training and validation set. I found that my first model had a low mean squared error on the training set but a high mean squared error on the validation set. This implied that the model was overfitting. 
+I started with the well-known nvidia architecture and further evolved and adapted it to the problem at hand. The final model consists of 6 layers, three 5x5 convolutional layers, one 3x3 convolutional layer, and two fully connected layers - see the next section for further details.
 
-To combat the overfitting, I modified the model so that ...
+For training, I first used only the training data provided by udacity making up 8'036 samples. This worked fine for track 1 but I couldn't get the model to generalized well enough to manage all of track 2 with that data. Thus, I recorded additional 6'000 samples on track 2. Half of it in standard direction, and the other half in opposite direction. Having data driving the track in both directions should allow the model to generalize better. 
 
-Then I ... 
+This model has about 2 million parameters - slightly more than the 1.5 million parameters of the nvidia model which was built for a much more complex task (driving in real world scenarios).
+To combat overfitting, I used dropout on the fully connected layers and augmented the training data by applying random flipping, random brightness, random shifting, and random shadows.
 
-The final step was to run the simulator to see how well the car was driving around track one. There were a few spots where the vehicle fell off the track... to improve the driving behavior in these cases, I ....
+While training the network, I monitored the mean squared error on the augmented training set and the validation set. When the mse dropped below 0.03, the model was usually capable to drive both tracks without crashing.
 
-At the end of the process, the vehicle is able to drive autonomously around the track without leaving the road.
+#### 2. Final Model Architecture
 
-####2. Final Model Architecture
+The final model architecture is
 
-The final model architecture (model.py lines 18-24) consisted of a convolution neural network with the following layers and layer sizes ...
+| Layer      | Description                                           | Param #   |
+|:----------:|:-----------------------------------------------------:|:---------:|
+| Input      | 316x76x3 RGB image                                    | 0         |
+| Conv2D 5x5 | 1x1 stride, valid padding, output (312, 72, 16), relu | 1'216     |
+| MaxPool2D  | 2x2 stride, output (156, 36, 16)                      | 0         |
+| Conv2D 5x5 | 1x1 stride, valid padding, output (152, 32, 32), relu | 12'832    |
+| MaxPool2D  | 2x2 stride, output (76, 16, 32)                       | 0         | 
+| Conv2D 5x5 | 1x1 stride, valid padding, output (72, 12, 64), relu  | 51'264    |
+| MaxPool2D  | 2x2 stride, output (36, 6, 64)                        | 0         | 
+| Conv2D 3x3 | 1x1 stride, valid padding, output (34, 4, 128), relu  | 73'856    |
+| MaxPool2D  | 2x2 stride, output (17, 2, 128)                       | 0         | 
+| Flatten    | output (27648)                                        | 0         | 
+| Dense      | output (500), dropout = 50 %, relu                    | 2'176'500 |
+| Dense      | output (20), dropout = 25 %, relu                     | 10'020    |
+| Dense      | output (1)                                            | 21        |
 
-Before the 320x160 images from the simulator are fed into the network, they are cropped to ???x???. Subsequently, local histogram optimization is applied to compensate dark low contrast situations which are often encountered on track 2.
+Instead of resizing the images beforehand, the convolutional+maxpool layers gradually reduce the image size picking up features on the way. Relus introduce nonlinearity into the model and to avoid overfitting of the fully connected layers dropout is used -- see the `get_model()` function for all the details.
 
-_________________________________________________________________
-Layer (type)                 Output Shape              Param #   
-=================================================================
-conv2d_1 (Conv2D)            (None, 76, 316, 32)       2432      
-_________________________________________________________________
-max_pooling2d_1 (MaxPooling2 (None, 38, 158, 32)       0         
-_________________________________________________________________
-conv2d_2 (Conv2D)            (None, 34, 154, 64)       51264     
-_________________________________________________________________
-max_pooling2d_2 (MaxPooling2 (None, 17, 77, 64)        0         
-_________________________________________________________________
-conv2d_3 (Conv2D)            (None, 13, 73, 128)       204928    
-_________________________________________________________________
-max_pooling2d_3 (MaxPooling2 (None, 6, 36, 128)        0         
-_________________________________________________________________
-flatten_1 (Flatten)          (None, 27648)             0         
-_________________________________________________________________
-dense_1 (Dense)              (None, 1000)              27649000  
-_________________________________________________________________
-dropout_1 (Dropout)          (None, 1000)              0         
-_________________________________________________________________
-dense_2 (Dense)              (None, 25)                25025     
-_________________________________________________________________
-dropout_2 (Dropout)          (None, 25)                0         
-_________________________________________________________________
-dense_3 (Dense)              (None, 1)                 26        
-=================================================================
+This model has about 2 million parameters - slightly more than the 1.5 million parameters of the nvidia model.
 
-Total params: 27,932,675
-Trainable params: 27,932,675
-Non-trainable params: 0
+Before the 320x160 images from the simulator are fed into the network, they are cropped to 316x76 pixels. Initially the same cropping was used for training and testing in the simulator, cutting away the part of the vehicle visible in the pictures as well as most of the sky. However, I noticed that the steering got quite unstable at times. To make it easier for the model to predict a stable steering wheel, a different vertical slicing was chosen when testing to give the model a 'lookahead' advantage. After cropping, local histogram optimization is applied to compensate dark low contrast situations which are often encountered on track 2. These two steps make up all the preprocessing, everything else has been learned by the network.
 
+The model used an adam optimizer, so the learning rate was not tuned manually.
 
-Here is a visualization of the architecture (note: visualizing the architecture is optional according to the project rubric)
+Here is a visualization of the architecture
 
-![alt text][image1]
+![Network architecture](network.png)
 
 #### 3. Creation of the Training Set & Training Process
+
+To be honest, I tried to provide only samples of center lane driving but had trouble to stay on course at time thus generating (unintentionally) several examples of recovering from deviations.
+
+First I chose to use the training data provided by udacity making up 8'036 samples. In addition I recorded 15'000 samples on track 1. Half of it in standard direction, and half of it in opposite direction. Having data driving the track in both directions should allow the model to generalize better. Most of the images are center lane driving but I intentionally added a couple of passages where I did not steer and then recovered using a steep steering angle.
 
 I started out with the ??? training samples provided by udacity.
 
