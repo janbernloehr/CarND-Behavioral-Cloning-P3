@@ -57,9 +57,9 @@ The stages in which the CNN solution is built can be broken down into the usual 
 
 I started with the well-known nvidia architecture and further evolved and adapted it to the problem at hand. The final model consists of 6 layers, three 5x5 convolutional layers, one 3x3 convolutional layer, and two fully connected layers - see the next section for further details.
 
-For training, I first used only the training data provided by udacity making up 8'036 samples. This worked fine for track 1 but I couldn't get the model to generalized well enough to manage all of track 2 with that data. Thus, I recorded additional 6'000 samples on track 2. Half of it in standard direction, and the other half in opposite direction. Having data driving the track in both directions should allow the model to generalize better. 
+For training, I first only used the training data provided by udacity making up 8'036 samples. This worked fine for track 1 but I couldn't get the model to generalized well enough to manage all of track 2 with that data. Thus, I recorded additional 15'000 samples on track 2. Half of it in standard direction, and the other half in opposite direction. Having data driving the track in both directions should allow the model to generalize better. I first used only this data for training which worked well for track 2 but the car didn't manage to drive all of track 1. Therefore, I added 11'000 samples of track 1 but only trained a few epochs with it - more on that later.
 
-This model has about 2 million parameters - slightly more than the 1.5 million parameters of the nvidia model which was built for a much more complex task (driving in real world scenarios).
+The model has about 200k parameters - about 20% less than the nvidia model which arguably was built for a much more complex task (driving in real world scenarios).
 To combat overfitting, I used dropout on the fully connected layers and augmented the training data by applying random flipping, random brightness, random shifting, and random shadows.
 
 While training the network, I monitored the mean squared error on the augmented training set and the validation set. When the mse dropped below 0.03, the model was usually capable to drive both tracks without crashing.
@@ -73,24 +73,25 @@ The final model architecture is
 | Input      | 316x76x3 RGB image                                    | 0         |
 | Conv2D 5x5 | 1x1 stride, valid padding, output (312, 72, 16), relu | 1'216     |
 | MaxPool2D  | 2x2 stride, output (156, 36, 16)                      | 0         |
-| Conv2D 5x5 | 1x1 stride, valid padding, output (152, 32, 32), relu | 12'832    |
-| MaxPool2D  | 2x2 stride, output (76, 16, 32)                       | 0         | 
-| Conv2D 5x5 | 1x1 stride, valid padding, output (72, 12, 64), relu  | 51'264    |
-| MaxPool2D  | 2x2 stride, output (36, 6, 64)                        | 0         | 
-| Conv2D 3x3 | 1x1 stride, valid padding, output (34, 4, 128), relu  | 73'856    |
-| MaxPool2D  | 2x2 stride, output (17, 2, 128)                       | 0         | 
-| Flatten    | output (27648)                                        | 0         | 
-| Dense      | output (500), dropout = 50 %, relu                    | 2'176'500 |
-| Dense      | output (20), dropout = 25 %, relu                     | 10'020    |
+| Conv2D 5x5 | 1x1 stride, valid padding, output (152, 32, 24), relu | 9'624     |
+| MaxPool2D  | 2x2 stride, output (76, 16, 24)                       | 0         | 
+| Conv2D 5x5 | 1x1 stride, valid padding, output (72, 12, 32), relu  | 19'232    |
+| MaxPool2D  | 2x2 stride, output (36, 6, 32)                        | 0         | 
+| Conv2D 3x3 | 1x1 stride, valid padding, output (34, 4, 48), relu   | 13'872    |
+| MaxPool2D  | 2x2 stride, output (17, 2, 48)                        | 0         | 
+| Flatten    | output (1632), dropout = 50 %,                        | 0         | 
+| Dense      | output (100), dropout = 40 %, relu                    | 163'300   |
+| Dense      | output (20), dropout = 30 %, relu                     | 2'020     |
 | Dense      | output (1)                                            | 21        |
 
 Instead of resizing the images beforehand, the convolutional+maxpool layers gradually reduce the image size picking up features on the way. Relus introduce nonlinearity into the model and to avoid overfitting of the fully connected layers dropout is used -- see the `get_model()` function for all the details.
 
-This model has about 2 million parameters - slightly more than the 1.5 million parameters of the nvidia model.
+This model has 209'000 parameters - about 20% less than the 250k parameters of the nvidia model while making use of much larger images.
 
-Before the 320x160 images from the simulator are fed into the network, they are cropped to 316x76 pixels. Initially the same cropping was used for training and testing in the simulator, cutting away the part of the vehicle visible in the pictures as well as most of the sky. However, I noticed that the steering got quite unstable at times. To make it easier for the model to predict a stable steering wheel, a different vertical slicing was chosen when testing to give the model a 'lookahead' advantage. After cropping, local histogram optimization is applied to compensate dark low contrast situations which are often encountered on track 2. These two steps make up all the preprocessing, everything else has been learned by the network.
+Before the 320x160 images from the simulator are fed into the network, they are cropped to 316x76 pixels. Initially, the same cropping was used for training and testing in the simulator, cutting away the part of the vehicle visible in the pictures as well as most of the sky. However, I noticed that the steering got quite unstable at times. To make it easier for the model to predict a stable steering wheel, a different vertical slicing was chosen when testing to give the model a 'lookahead' advantage. After cropping, local histogram optimization is applied to compensate dark low contrast situations which are often encountered on track 2. These two steps make up all the preprocessing, everything else has been learned by the network.
 
-The model used an adam optimizer, so the learning rate was not tuned manually.
+The model used an adam optimizer, so the learning rate 1e-4 was not tuned manually.
+To speed up learning, L2-regularization with lambda=1e-4 is used on the fully connected layers.
 
 Here is a visualization of the architecture
 
@@ -98,21 +99,23 @@ Here is a visualization of the architecture
 
 #### 3. Creation of the Training Set & Training Process
 
-To be honest, I tried to provide only samples of center lane driving but had trouble to stay on course at time thus generating (unintentionally) several examples of recovering from deviations.
-
-First I chose to use the training data provided by udacity making up 8'036 samples. In addition I recorded 15'000 samples on track 1. Half of it in standard direction, and half of it in opposite direction. Having data driving the track in both directions should allow the model to generalize better. Most of the images are center lane driving but I intentionally added a couple of passages where I did not steer and then recovered using a steep steering angle.
-
-I started out with the ??? training samples provided by udacity.
+In my very first attempts, I only used the training data provided by udacity making up 8'036 samples. Here are three examples
 
 ![3 examples from the udacity dataset](images/examples.PNG)
 
-I couldn't manage to handle track 2 with those samples alone, thus I also recorded a few laps on the second track. 50% in default direction and 50% in the opposite direction - more on that in a minute.
+This worked fine for track 1 but I couldn't get the model to generalized well enough to manage all of track 2 with that data. Therefore, I recorded 15'316 samples on track 2. Half of it in standard direction, and the other half in opposite direction. Having data driving the track in both directions should allow the model to generalize better. Track 2 is made up of a divided lane and I drove the entire track on the right side steering with the mouse in hope to produce smoother steering data.
 
-The unfiltered data set is very much biased towards steering straight.
+![3 examples from the dataset on track 2](images/examples2.PNG)
+
+I trained the model solely with this data which worked great for driving on track 2 but there were a few issues on track 1. Those issues were mitigated by refining the weights obtained from training on track 2 data by training on additional 11'835 samples driven on track 1 - driven in opposite direction! - and only trained for 5 epochs -- more details below.
+
+![3 examples from the dataset on track 1](images/examples3.PNG)
+
+The unfiltered data set is biased towards steering straight with a few outliers due to extreme steering
 
 ![Histogram of unfiltered data](images/original-hist.PNG)
 
-To counter this, I divided the absolute steering angle interval [0,1.2] into 1200 bins and chose at random at most 50 samples for each bin -- see `equalize_angles()`. Subsequently, I added images from the left and right camera with a steering correction of +10 degree and -10 degree, respectively -- see `select_cameras`.
+To have more equally distributed training data, I divided the absolute steering angle interval [0,1] into 1000 bins and chose at random at most 50 samples for each bin -- see `equalize_angles()`. Furthermore, I chose for each sample at random the image either from the center, the left, or the right camera. In case of the left and right cameras a steering correction of +10 degree and -10 degree, respectively, were added -- see `random_select_cameras`. The additional images from the left and right cameras produce samples of "driving gone wrong" which help the model to recover from errors.
 
 ![Steering correction for side cams](images/sidecams-steering-correction.PNG)
 
@@ -120,11 +123,11 @@ Thus ending up with a distribution which is much more balanced.
 
 ![Histogram of rectified data](images/rectified-hist.PNG)
 
-Most of the data on track 1 is recorded driving a left turn, thus I randomly flipped the images (together with the steering angle) to avoid overfitting -- see `apply_random_flip_single()`.
+To avoid bias towards a certain steering direction, I randomly flipped the images (together with the steering angle) -- see `apply_random_flip_single()`.
 
 ![Random flipping](images/random-flip.PNG)
 
-To further counter the issue of steering angle bias and to help the model generalize, I also shifted the images from -80px to +80px where the amount was chosen from a uniform distribution, and corrected the steering angle accordingly -- see `apply_random_shifting_single()`.
+To further counter steering angle bias, I also randomly shifted the images from -80px to +80px where the amount was chosen from a uniform distribution, and corrected the steering angle -- see `apply_random_shifting_single()`.
 
 ![Random shifting](images/random-shift.PNG)
 
@@ -136,16 +139,28 @@ On track 2 shadows are abundant and very dark at times while on track 1 there ar
 
 ![Random shadow](images/random-shadow.PNG)
 
-Before training, the unfiltered dataset was split 80/20 into training and validation sets, the steering angles were histogram equalized, and the set was shuffled. Augmentations such as using left and right cameras, random flipping, random shifting, random brightness, and random shadows were only applied on the training set.
+Before training, the unfiltered dataset was split 80/20 into training and validation sets, the steering angles were histogram equalized, and the set was shuffled. All augmentations mentioned above such as using left and right cameras, random flipping, random shifting, random brightness, and random shadows were only applied on the training set.
 
-| Training Set | Validation Set |
-| ------------ | -------------- |
-| X images     | Y images       |
+| Training Set     | Validation Set |
+| ---------------- | -------------- |
+| 7'432 images     | 1'858 images   |
 
-To save memory and allow parallelization a python generator is used, yielding from list of image paths and steering angles batches of (augmented) images & steering angles -- see `generate_samples()`.
+To save memory and allow parallelization, a python generator is used, yielding from list of image paths and steering angles batches of (augmented) images & steering angles. Since all the augmentation is done on the CPU and I have a 4 core machine (with hyperthreading) the multiprocessing module was used to produce each batch of images on all cores simulatenously  -- see `generate_samples()`.
 
 Every image of each of the sets is preprocessed by first selecting a horizontal slice from the image removing the car and most of the sky. Subsequently, skimage's local histogram optimization is applied to counter dark and low contrast situations. Then the image is fed into the network.  
 
 ![9 images from the generator (augmentation on)](images/img_generated.PNG)
 
-The validation set helped me to determine when the model was overfitting. The ideal number of epochs was TODO 15-20 when the mse on the validation set dropped below 0.2. I used an adam optimizer so that manually training the learning rate wasn't necessary.
+The validation set helped me to determine when the model was overfitting. The ideal number of epochs was 200 when the mse on the validation set dropped below 0.3. I used an adam optimizer so that manually training the learning rate wasn't necessary.
+
+In my testing the most difficult part of track 2 appeared to be a very sharp right turn
+
+![turn-1](images/turn1.jpg) ![turn-2](images/turn2.jpg) ![turn-3](images/turn3.jpg)
+
+which the model handled very well after training 200 epochs.
+
+However, there were difficulties on track 1 which has not been seen by the model up to this point of training. In more detail, driving was okay initially staying almost centered on the lane, became slightly unstable when driving across the bridge and the car eventually didn't manage to make the sharp left turn immediately after the bridge.
+
+To this end, I trained another 5 epochs using additional 11'837 samples driven on track 1 but in opposite direction. With this additional training, the model managed to drive all of track 1 staying in the center of the lane most of the time and never touching the lane border. Interestingly, the model afterwards struggled more with the previously mentioned sharp turn on track 2, making a lane change because of too few steering, but reverting back to the correct lane shortly afterwards.
+
+Overall I am quite happy with the outcome not using any data driven on track 1 in the "correct" direction.

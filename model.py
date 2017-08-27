@@ -15,14 +15,6 @@ from sklearn.model_selection import train_test_split
 
 from multiprocessing import Pool, freeze_support
 
-# The list recording directories
-#data_paths = [ r"D:\recordings\data\data", r"D:\recordings\r1", r"D:\recordings\r2", r"D:\recordings\r3" ]
-#data_paths = [ r"D:\recordings\data\data", r"D:\recordings\r2", r"D:\recordings\r3" ]
-#data_paths = [  r"D:\recordings\r1", r"D:\recordings\r4", r"D:\recordings\r5", r"D:\recordings\r6" ]
-#data_paths = [ r"D:\recordings\data\data", r"D:\recordings\r2", r"D:\recordings\r3" ]
-#data_paths = [  r"D:\recordings\r5", r"D:\recordings\r6" ]
-data_paths = [   r"D:\recordings\r4", r"D:\recordings\r5", r"D:\recordings\r6" ]
-
 # ========================================================================================================
 #                                     raw data loading section
 # ========================================================================================================
@@ -191,19 +183,22 @@ def apply_random_shadow_single(X):
 # ========================================================================================================
 
 def preprocess_sample(sample):
+    # Split the input variable (needed because of multiprocessing module)
     X_in = sample[0]
     y = sample[1]
     augment = sample[2]
 
-    #print(X_in.shape)
+    # Load and crop the image
     X = load_single(X_in)[50:130, :, :]
     
+    # Apply data augmentation
     if augment:
         X = apply_random_shadow_single(X)
         X = apply_random_brightness_single(X)
         X, y = apply_random_flip_single(X, y)
         X, y = apply_random_shifting_single(X, y)
     
+    # Apply local adaptive histogram equalization
     X = equalize_adapthist(X)
     
     return X, y
@@ -287,9 +282,34 @@ def get_nvidia_model():
     
     return model
 
+def train(model, data_paths, epochs, name):
+    # Parse the csv files
+    X_data, y_data = parse_recordings(data_paths)
+    X_eq, y_eq = equalize_angles(X_data, y_data)
+
+    # Train / Validation split
+    X_train, X_val, y_train, y_val = train_test_split(X_eq, y_eq, test_size=.2)
+
+    # Train the model
+    model.fit_generator(generate_samples(X_train, y_train, True), 
+                    steps_per_epoch=len(X_train)/128,
+                    epochs=epochs,
+                    validation_data=generate_samples(X_val, y_val, False),
+                    validation_steps = len(X_val)/128,
+                    callbacks=[ModelCheckpoint(r'weights\\' + name + r'-{epoch:02d}.h5', monitor='val_loss', verbose=0, save_best_only=False, save_weights_only=False, mode='auto', period=1)])
+
+
 # ========================================================================================================
 #                                     Run the code!
 # ========================================================================================================
+
+# The list recording directories
+
+# Only data on track 2
+data_paths1 = [   r"D:\recordings\r4", r"D:\recordings\r5", r"D:\recordings\r6" ]
+
+# Additional data on track 1
+data_paths2 = [   r"D:\recordings\r4", r"D:\recordings\r5", r"D:\recordings\r6" ]
 
 if __name__ == '__main__':
     from keras.models import Sequential, load_model
@@ -307,21 +327,11 @@ if __name__ == '__main__':
     #model = load_model('model.h5', custom_objects={"ktf": ktf})
     model.summary()
 
-    # Parse the csv files
-    X_data, y_data = parse_recordings(data_paths)
-    X_eq, y_eq = equalize_angles(X_data, y_data)
+    # Train 200 epochs only using data of track 2
+    train(model, data_paths1, 100, "model-pre")
 
-    # Train / Validation split
-    X_train, X_val, y_train, y_val = train_test_split(X_eq, y_eq, test_size=.2)
-
-    # Train the model
-
-    model.fit_generator(generate_samples(X_train, y_train, True), 
-                    steps_per_epoch=len(X_train)/128,
-                    epochs=5,
-                    validation_data=generate_samples(X_val, y_val, False),
-                    validation_steps = len(X_val)/128,
-                    callbacks=[ModelCheckpoint(r'weights\model-{epoch:02d}.h5', monitor='val_loss', verbose=0, save_best_only=False, save_weights_only=False, mode='auto', period=1)])
+    # Train 5 epochs with additional data from track 1 (driven in reverse direction)
+    train(model, data_paths2, 5, "model")
 
     # Save the trained model
     model.save('model.h5')
