@@ -18,7 +18,10 @@ from multiprocessing import Pool, freeze_support
 # The list recording directories
 #data_paths = [ r"D:\recordings\data\data", r"D:\recordings\r1", r"D:\recordings\r2", r"D:\recordings\r3" ]
 #data_paths = [ r"D:\recordings\data\data", r"D:\recordings\r2", r"D:\recordings\r3" ]
-data_paths = [  r"D:\recordings\r2", r"D:\recordings\r3" ]
+#data_paths = [  r"D:\recordings\r1", r"D:\recordings\r4", r"D:\recordings\r5", r"D:\recordings\r6" ]
+#data_paths = [ r"D:\recordings\data\data", r"D:\recordings\r2", r"D:\recordings\r3" ]
+#data_paths = [  r"D:\recordings\r5", r"D:\recordings\r6" ]
+data_paths = [   r"D:\recordings\r4", r"D:\recordings\r5", r"D:\recordings\r6" ]
 
 # ========================================================================================================
 #                                     raw data loading section
@@ -59,7 +62,7 @@ def parse_recordings(paths):
     return images, measurements
 
 # Equalizes the given X, y samples using histogram randomization
-def equalize_angles(X, y, n_bins = 1200, max_number = 50):
+def equalize_angles(X, y, n_bins = 1000, max_number = 50):
     X_out = []
     y_out = []
     
@@ -67,7 +70,7 @@ def equalize_angles(X, y, n_bins = 1200, max_number = 50):
     
     # Partition the interval [0, 1.2] into n_bins bins and
     # choose at random at most max_number of representatives
-    for end in np.linspace(0, 1.2, n_bins):
+    for end in np.linspace(0, 1.0, n_bins):
         ind = [i for i in range(len(X)) if abs(y[i]) >= start and abs(y[i]) < end]
         
         if len(ind) > max_number:
@@ -233,75 +236,25 @@ def get_model():
     model = Sequential()
     
     reg=regularizers.l2(0.0001)
-    
-    model.add(Conv2D(32, (5,5), activation='relu', strides=(1,1), input_shape=(80,320,3)))
-    model.add(MaxPooling2D(pool_size=(2,2)))
-    model.add(Conv2D(64, (5,5), activation='relu', strides=(1,1)))
-    model.add(MaxPooling2D(pool_size=(2,2)))
-    model.add(Conv2D(128, (5,5), activation='relu', strides=(1,1)))
-    model.add(MaxPooling2D(pool_size=(2,2)))
-
-    model.add(Flatten())
-    
-    model.add(Dense(1000, activation='relu', kernel_regularizer=reg))
-    model.add(Dropout(0.5))
-    model.add(Dense(25, activation='relu',kernel_regularizer=reg))
-    model.add(Dropout(0.25))
-    model.add(Dense(1))
-    
-    adam = Adam(lr=0.0001)
-    
-    model.compile(loss='mse', optimizer=adam, metrics=['mse','accuracy'])
-    
-    return model
-
-def get_model2():
-    model = Sequential()
-    
-    reg=regularizers.l2(0.0001)
 
     model.add(Lambda(lambda image: image[:, 2:78, 2:318, :], input_shape=(80,320,3)))
     
     model.add(Conv2D(16, (5,5), activation='relu', strides=(1,1)))
     model.add(MaxPooling2D(pool_size=(2,2)))
+    model.add(Conv2D(24, (5,5), activation='relu', strides=(1,1)))
+    model.add(MaxPooling2D(pool_size=(2,2)))
     model.add(Conv2D(32, (5,5), activation='relu', strides=(1,1)))
     model.add(MaxPooling2D(pool_size=(2,2)))
-    model.add(Conv2D(64, (5,5), activation='relu', strides=(1,1)))
-    model.add(MaxPooling2D(pool_size=(2,2)))
-    model.add(Conv2D(128, (3,3), activation='relu', strides=(1,1)))
+    model.add(Conv2D(48, (3,3), activation='relu', strides=(1,1)))
     model.add(MaxPooling2D(pool_size=(2,2)))
 
     model.add(Flatten())
-    
-    model.add(Dense(500, activation='relu', kernel_regularizer=reg))
     model.add(Dropout(0.5))
+    
+    model.add(Dense(100, activation='relu', kernel_regularizer=reg))
+    model.add(Dropout(0.4))
     model.add(Dense(20, activation='relu',kernel_regularizer=reg))
-    model.add(Dropout(0.25))
-    model.add(Dense(1))
-    
-    adam = Adam(lr=0.0001)
-    
-    model.compile(loss='mse', optimizer=adam, metrics=['mse','accuracy'])
-    
-    return model
-
-def get_simple_model():
-    model = Sequential()
-    
-    model.add(Lambda(lambda image: ktf.image.resize_images(image, (32, 128)), input_shape=(80,320,3)))
-    
-    model.add(Conv2D(16, (3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Conv2D(32, (3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Conv2D(64, (3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    
-    model.add(Flatten())
-    
-    model.add(Dense(500, activation='relu'))
-    model.add(Dense(100, activation='relu'))
-    model.add(Dense(20, activation='relu'))
+    model.add(Dropout(0.3))
     model.add(Dense(1))
     
     adam = Adam(lr=0.0001)
@@ -323,7 +276,6 @@ def get_nvidia_model():
     model.add(Conv2D(64,(3,3),padding='valid', activation='relu', strides=(1,1)))
     model.add(Conv2D(64,(3,3),padding='valid', activation='relu', strides=(1,1)))
     model.add(Flatten())
-    model.add(Dense(1164, activation='relu'))
     model.add(Dense(100, activation='relu'))
     model.add(Dense(50, activation='relu'))
     model.add(Dense(10, activation='relu'))
@@ -351,13 +303,8 @@ if __name__ == '__main__':
     freeze_support()
 
     # Build the keras model and print a summary
-    #model = get_simple_model()
-    #model = get_model()
-    #model = load_model('model-my.h5', custom_objects={"ktf": ktf})
-    #model = get_nvidia_model()
-    #model = load_model('nv-weights\model-09.h5', custom_objects={"ktf": ktf})
-    #model = load_model('model-my2.h5', custom_objects={"ktf": ktf})
-    model = get_model2()
+    model = get_model()
+    #model = load_model('model.h5', custom_objects={"ktf": ktf})
     model.summary()
 
     # Parse the csv files
@@ -371,10 +318,10 @@ if __name__ == '__main__':
 
     model.fit_generator(generate_samples(X_train, y_train, True), 
                     steps_per_epoch=len(X_train)/128,
-                    epochs=200,
+                    epochs=5,
                     validation_data=generate_samples(X_val, y_val, False),
                     validation_steps = len(X_val)/128,
-                    callbacks=[ModelCheckpoint(r'D:\Projects\CarND-Behavioral-Cloning-P3\noob-model\modelx-{epoch:02d}.h5', monitor='val_loss', verbose=0, save_best_only=False, save_weights_only=False, mode='auto', period=1)])
+                    callbacks=[ModelCheckpoint(r'weights\model-{epoch:02d}.h5', monitor='val_loss', verbose=0, save_best_only=False, save_weights_only=False, mode='auto', period=1)])
 
     # Save the trained model
-    model.save('noob-modelx.h5')
+    model.save('model.h5')
