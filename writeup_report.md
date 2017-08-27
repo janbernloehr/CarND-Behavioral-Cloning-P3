@@ -164,3 +164,11 @@ However, there were difficulties on track 1 which has not been seen by the model
 To this end, I trained another 5 epochs using additional 11'837 samples driven on track 1 but in opposite direction. With this additional training, the model managed to drive all of track 1 staying in the center of the lane most of the time and never touching the lane border. Interestingly, the model afterwards struggled more with the previously mentioned sharp turn on track 2, making a lane change because of too few steering, but reverting back to the correct lane shortly afterwards.
 
 Overall I am quite happy with the outcome not using any data driven on track 1 in the "correct" direction.
+
+- [Video of driving track 2](t2.mp4)
+- [Video of driving track 1](t1.mp4)
+
+**Areas of potential improvements**
+- Driving on track 2 is much smoother on track 1, i.e. the model still has issues to generalize smooth driving to tracks it has not seen that much
+- Sharp turns on both tracks are an issue. When looking at the recorded images this may be improved by changing the FoV
+- The network size could probably be further reduced by rescaling the images
